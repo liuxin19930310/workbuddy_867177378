@@ -26,6 +26,9 @@
     紧接着重复调用返回 `state=traveling` —— **幂等生效，未重复派出**
   - 域名矩阵：三域名对签到接口返回完全一致（见第二节）
   - 文件完整性：仓库内 5 个文件与技能包资产逐字节一致（仅行尾 CRLF 差异）
+- **推送链路已实测到达（2026-09-12 01:21）**：Actions 手动触发（勾 `force_notify`），
+  iPhone 实际收到通知；正文 `source: env:WB_TOKEN` 证明走的是 CI Secret 而非本机登录态。
+  `Secret → checkin.py → api.day.app → APNs → iPhone` 全线打通。
 
 ### ⬜ 待手动完成
 
@@ -78,9 +81,14 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 | `BARK_SERVER` | 官方 `https://api.day.app` | 自建 bark-server 时填自己的域名 |
 | `BARK_GROUP` | `workbuddy` | 通知分组，便于在通知中心归类 |
 | `BARK_LEVEL` | `active` | `timeSensitive` 可突破专注模式；`critical` 静音也会响 |
-| `PUSH_LEVEL` | `all` | `all` 每次巡检都推（签到 ≤5 + 旅行 ≤4 条/天）；`action` 只在领取/派出/出错时推；`off` 完全关闭 |
+| `PUSH_LEVEL` | `action` | `action` 只在领取/派出/出错时推（每天 ≤1~2 条，**当前设置**）；`all` 每次巡检都推（签到 ≤5 + 旅行 ≤4 条/天）；`off` 完全关闭 |
 
-> 嫌通知太多就把 `PUSH_LEVEL` 改成 `action`（每天 ≤1~2 条）。签到这类任务本质是「成功不必通知，失败才要」。
+> 签到这类任务本质是「成功不必通知，失败才要」——成功一天只有一次，其余时点的「今日已签到」没有信息量，
+> 所以默认用 `action`。想看每次巡检就把 `PUSH_LEVEL` 改回 `all`。
+
+**通知正文只给结论**（时间 / 结果 / 本次积分 / 连续天数，出错时附原因）。
+完整的原始 JSON 与推送结果**只出现在 Actions 日志**里（`push` 字段 + `[push]` 行），
+手机通知保持清爽，排错能力不损失。
 
 ### 推送问题自查（不必靠猜）
 

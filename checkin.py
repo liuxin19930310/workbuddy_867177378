@@ -307,10 +307,10 @@ def emit(result, notify_it=None):
     if notify_it is None:
         notify_it = should_push(result)
     if notify_it:
-        # 先算好正文（不含 push 字段，避免自引用），再把推送结果并入结果 JSON
-        result["push"] = notify(
-            build_title(result),
-            build_body(result) + "\n\n原始输出：" + json.dumps(result, ensure_ascii=False))
+        # 正文只给结论（时间 / 结果 / 本次积分 / 连续天数，出错时附原因）。
+        # 完整的原始 JSON 与推送结果留在 stdout 与 [push] 日志行里 ——
+        # 手机通知保持清爽，排错能力不损失。
+        result["push"] = notify(build_title(result), build_body(result))
     print(json.dumps(result, ensure_ascii=False))
     if notify_it:
         report_push(result["push"])

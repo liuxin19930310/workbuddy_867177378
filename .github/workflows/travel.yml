@@ -53,10 +53,10 @@ jobs:
           BARK_GROUP: workbuddy
           # active(默认) / timeSensitive(可突破专注模式) / critical(静音也响) / passive
           BARK_LEVEL: active
-          # 推送级别：all    = 每次巡检都推（默认，每天 ≤4 条）
-          #           action = 只在派出成功 / 领取成功 / 出错时推（每天 ≤2 条）
+          # 推送级别：action = 只在派出成功 / 领取成功 / 出错时推（当前设置，每天 ≤2 条）
+          #           all    = 每次巡检都推（含「旅行中」这类无动作结果，每天 ≤4 条）
           #           off    = 本仓不推送（什么都不推，也不产生告警注解）
-          PUSH_LEVEL: all
+          PUSH_LEVEL: action
           # 用 github.event.inputs 而非 inputs：inputs 上下文仅在 workflow_dispatch /
           # workflow_call 可用，定时(schedule)触发时其值为 null 且 inputs 段的 default 不生效。
           # github.event.inputs 在所有事件下都存在（非手动触发时为空），配合下方 shell 默认值最稳。
