@@ -48,10 +48,30 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 
 **第 2 步：启用 Actions**（若 Actions 页显示需要 Enable，点一次即可）
 
-**第 3 步：验证**（job 绿色 ≠ 推送可用，脚本刻意吞掉推送异常，**只有真收到微信才算通**）
+**第 3 步：验证**
 
 - `WorkBuddy Daily Checkin` → Run workflow，勾 `force_notify` → 应收到一条「（测试）签到…」
 - `WorkBuddy Cat Travel` → Run workflow，勾 `dry_run` → 只读查询，也会推一条巡检
+
+**推送问题自查（不必靠猜）**：结果 JSON 里有 `push` 字段，日志里另有 `[push]` 行；CI 中还会输出
+`::notice::` / `::warning::` 注解，直接显示在 run 摘要里。判读：
+
+| `push` 值 | 含义 |
+|---|---|
+| `ok: pushid=<id>` | 推送成功 |
+| `skipped: 未配置 SERVERCHAN_KEY（Secret 缺失或为空）` | Secret 没建，或**名称拼写不一致** |
+| `skipped: …疑似被填成了 accessToken（JWT）` | `WB_TOKEN` 与 `SERVERCHAN_KEY` 填反/填重 |
+| `failed: HTTP 400 code=40001 msg=[AUTH]错误的Key` | SendKey 本身失效 |
+
+想先在本机确认 SendKey 是否有效（避免来回改 Secret 试错）——用技能包里的排查工具：
+
+```powershell
+# 先把 SendKey（SCT 开头）复制到剪贴板
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.workbuddy\skills\workbuddy-credit-automation\scripts\test-push.ps1"
+```
+
+该脚本从剪贴板读密钥（不进命令行历史），若剪贴板里是 `eyJ` 开头的令牌会先给出警告。
+同类工具：`probe.py`（账号/域名矩阵/签到/旅行/Buddy 一次性只读体检）。两者都只留在本机，不随仓库分发。
 
 ---
 
