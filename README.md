@@ -36,8 +36,7 @@
 | Secret | 值 | 必填 |
 |---|---|---|
 | `WB_TOKEN` | 账号 L 的 `accessToken` | ✅ |
-
-> 本仓库**不需要配置 `SERVERCHAN_KEY`** —— 已关闭微信推送，详见下方「推送开关」。
+| `BARK_KEY` | Bark App 首页那串 key（或整条测试 URL） | ✅（否则收不到通知） |
 
 取令牌：在本仓目录执行
 
@@ -51,39 +50,60 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 
 **第 3 步：验证**
 
-- `WorkBuddy Daily Checkin` → Run workflow → 结果 JSON 的 `action` 应为 `claimed`（当天首次）或 `skip_already_signed`（其后）
+- `WorkBuddy Daily Checkin` → Run workflow，勾 `force_notify` → 手机应收到一条「（测试）签到…」
 - `WorkBuddy Cat Travel` → Run workflow，勾 `dry_run` → 只读查询状态，不做任何写操作
 
 ---
 
-## 🔕 推送开关：本仓库已关闭微信推送
+## 📱 推送：Bark（iPhone 原生通知）
 
-两个 workflow 都设了 `PUSH_LEVEL: off`，并已移除 `SERVERCHAN_KEY` 行 ——
-**不发任何消息，也不产生告警注解**。
+为什么用 Bark 而不是 Server 酱：**无条数限制**（Server 酱免费版仅约 5 条/天，与 `PUSH_LEVEL: all` 每天最多 9 条结构性冲突）、
+**不需要注册账号/关注公众号**，而且**验证通路完全不经过 GitHub** —— 用手机浏览器打开一条 URL 就知道通不通。
 
-这与「只把密钥删掉」有本质区别：后者会让脚本每次运行都输出
-`skipped: 未配置 SERVERCHAN_KEY` 并触发 `::warning::` 注解（签到 5 + 旅行 4，每天最多 9 条噪音）。
-`off` 是显式的「本仓不推送」，日志干净且意图自明。
+### 拿到 key
 
-**将来若要重新启用推送**：
+装 Bark（App Store，开源项目 Finb/Bark）→ 打开首页 → 复制那串 key（或直接复制整条测试 URL）。
+先自己做一次验证：**把测试 URL 复制到手机浏览器打开，应当立刻弹通知**。这一步与 GitHub 无关，30 秒完成。
 
-1. 新增 Secret `SERVERCHAN_KEY`，值取 sct.ftqq.com 页面上 `SCT` 开头的 SendKey；
-2. 把两个 workflow 里的 `PUSH_LEVEL: off` 改回 `all`（每次巡检都推）或 `action`（只在领取/派出/出错时推）；
-3. 先用技能包里的 `scripts/test-push.ps1` 确认密钥本身有效（从剪贴板读密钥，只发一条测试消息）：
+### 存进 Secret
 
-```powershell
-# 先把 SendKey（SCT 开头）复制到剪贴板
-powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.workbuddy\skills\workbuddy-credit-automation\scripts\test-push.ps1"
-```
+新增 Secret `BARK_KEY`：填**纯 key**，或直接粘贴 App 首页那条**完整 URL** 都行（脚本会自动解析出 key）。
 
-重启用推送后，可用结果 JSON 的 `push` 字段 / `[push]` 日志行 / `::warning::` 注解判断推送是否真的成功：
+### 脚本侧参数（都在 workflow 的 `env` 里，按需改）
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `NOTIFY_CHANNEL` | `bark` | `bark`（iPhone）/ `serverchan`（微信） |
+| `BARK_KEY` | — | 密钥，走 Secret 注入 |
+| `BARK_SERVER` | 官方 `https://api.day.app` | 自建 bark-server 时填自己的域名 |
+| `BARK_GROUP` | `workbuddy` | 通知分组，便于在通知中心归类 |
+| `BARK_LEVEL` | `active` | `timeSensitive` 可突破专注模式；`critical` 静音也会响 |
+| `PUSH_LEVEL` | `all` | `all` 每次巡检都推（签到 ≤5 + 旅行 ≤4 条/天）；`action` 只在领取/派出/出错时推；`off` 完全关闭 |
+
+> 嫌通知太多就把 `PUSH_LEVEL` 改成 `action`（每天 ≤1~2 条）。签到这类任务本质是「成功不必通知，失败才要」。
+
+### 推送问题自查（不必靠猜）
+
+结果 JSON 里有 `push` 字段，日志里另有 `[push]` 行；CI 中还会输出 `::notice::` / `::warning::`
+注解，直接显示在 run 摘要里。结果始终带渠道标签：
 
 | `push` 值 | 含义 |
 |---|---|
-| `ok: pushid=<id>` | 推送成功 |
-| `skipped: 未配置 SERVERCHAN_KEY（Secret 缺失或为空）` | Secret 没建，或**名称拼写不一致** |
-| `skipped: …疑似被填成了 accessToken（JWT）` | `WB_TOKEN` 与 `SERVERCHAN_KEY` 填反/填重 |
-| `failed: HTTP 400 code=40001 msg=[AUTH]错误的Key` | SendKey 本身失效 |
+| `ok: [bark] code=200` | 推送成功 |
+| `skipped: [bark] 未配置 BARK_KEY（Secret 缺失或为空）` | Secret 没建，或**名称拼写不一致** |
+| `skipped: [bark] BARK_KEY 疑似被填成了 accessToken（JWT）` | 把 `WB_TOKEN` 的值填进了 `BARK_KEY` |
+| `failed: [bark] HTTP 400 … failed to get device token` | key 在 Bark 服务端不存在（复制不全 / 在 App 里重置过） |
+| `failed: [bark] HTTP 4xx` 且提示 APNs | 多为 iPhone 上 Bark 的通知权限未开 |
+
+**本地先验密钥**（避免来回改 Secret）：
+
+```powershell
+# 先把 Bark 的 key（或整条测试 URL）复制到剪贴板
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.workbuddy\skills\workbuddy-credit-automation\scripts\test-push.ps1"
+```
+
+脚本从剪贴板读密钥（不进命令行历史），并按密钥形态自动识别渠道（`SCT` 开头 = Server 酱，否则 Bark）；
+若剪贴板里是 `eyJ` 开头的令牌会先给出警告。
 
 同类排查工具：`probe.py`（账号 / 域名矩阵 / 签到 / 旅行 / Buddy 一次性只读体检）。
 两个工具都只留在本机技能包内，不随仓库分发。
