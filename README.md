@@ -16,11 +16,16 @@
 
 ## 一、部署状态
 
-### ✅ 已完成（本地脚本一键完成）
+### ✅ 已完成
 
 - 仓库初始化：`checkin.py`、`travel.py`、`get-token.ps1`
 - 工作流：`.github/workflows/checkin.yml`、`.github/workflows/travel.yml`
-- 本机自检：签到实测 **`claimed` +100 积分**、旅行 dry-run 只读查询通过
+- **本机实测闭环（2026-09-12 00:30）**
+  - 签到：`claimed` **+100 积分**，`streak_days=2`，`total_credits=200`
+  - 旅行：`departed` → 商场店铺，`record_id=4520713`，预计 04:30 归来；
+    紧接着重复调用返回 `state=traveling` —— **幂等生效，未重复派出**
+  - 域名矩阵：三域名对签到接口返回完全一致（见第二节）
+  - 文件完整性：仓库内 5 个文件与技能包资产逐字节一致（仅行尾 CRLF 差异）
 
 ### ⬜ 待手动完成
 
@@ -52,16 +57,26 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 
 ## 二、已知前置条件与坑
 
-### ⚠️ 旅行功能需要账号先有「激活的 Buddy 角色」
+### ⚠️ 旅行功能要求账号已有「激活的 Buddy 角色」（换号必查）
 
-换号后实测（2026-09-12）：本账号 `buddy = null`，`/travel/depart` 返回
+这是一个**换号后才会暴露的前置条件**，与令牌无关。判定命令：
+
+```bash
+# data.buddy 为 null 即为不满足
+GET https://www.workbuddy.cn/v2/activity/growth/buddy/info
+```
+
+不满足时 `travel/status` 的 `buddy_id = 0`、`POST /travel/depart` 恒返回：
 
 ```
 HTTP 400  {"code":400,"msg":"no active buddy"}
 ```
 
-即在客户端「成长计划 → Buddy」里创建角色之前，`travel.yml` 每天会推异常通知。
-**处理方式**：先在客户端创建 Buddy，旅行自动化即可正常闭环。
+处理：在客户端「成长计划 → Buddy」先创建角色。
+
+> 本账号实测记录：2026-09-12 00:25 首次探测为 `buddy = null`（此时 depart 报 `no active buddy`）；
+> 00:30 创建角色后复测 —— Buddy 为 `龙焰喵`（SSR，`instance_id=7663982`），`departed` 成功。
+> 即**同一令牌、同一脚本，仅补齐 Buddy 后旅行即恢复正常**，可作为该前置条件的对照证据。
 
 ### 域名（实测结论，纠正网传说法）
 
