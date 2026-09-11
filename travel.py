@@ -21,6 +21,7 @@
     推送级别由 PUSH_LEVEL 控制：
       all    = 每次巡检都推送（默认，含「旅行中」「额度已用尽」等巡检结果）
       action = 只在「派出成功 / 领取成功 / 出错」时推送
+      off    = 本仓彻底关闭推送（无推送、无告警噪音）
     推送结果写回结果 JSON 的 push 字段并打印（CI 下额外输出 GitHub 注解），
     故 SendKey 填错/未配置时不再静默。
     ⚠️ 易混淆：WB_TOKEN 是 `eyJ...` 开头的 JWT，SERVERCHAN_KEY 是 `SCT` 开头的 SendKey。
@@ -182,11 +183,14 @@ def report_push(status):
 # 推送级别（环境变量 PUSH_LEVEL）：
 #   all    = 每次巡检都推送（默认；用户要求「巡检结果也推送到 Server 酱」）
 #   action = 仅在派出 / 领取 / 出错时推送（安静模式，正常每天最多 2 条）
+#   off    = 本仓彻底关闭推送（什么都不推，也不输出告警注解）
 PUSH_ACTIONS = ("departed", "claimed")
 PUSH_LEVEL = os.environ.get("PUSH_LEVEL", "all").strip().lower()
 
 
 def should_push(result):
+    if PUSH_LEVEL == "off":
+        return False
     if result.get("status") == "error":
         return True
     if PUSH_LEVEL == "all":

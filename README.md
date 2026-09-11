@@ -36,7 +36,8 @@
 | Secret | 值 | 必填 |
 |---|---|---|
 | `WB_TOKEN` | 账号 L 的 `accessToken` | ✅ |
-| `SERVERCHAN_KEY` | Server 酱 SendKey（微信推送） | 可选 |
+
+> 本仓库**不需要配置 `SERVERCHAN_KEY`** —— 已关闭微信推送，详见下方「推送开关」。
 
 取令牌：在本仓目录执行
 
@@ -50,11 +51,32 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 
 **第 3 步：验证**
 
-- `WorkBuddy Daily Checkin` → Run workflow，勾 `force_notify` → 应收到一条「（测试）签到…」
-- `WorkBuddy Cat Travel` → Run workflow，勾 `dry_run` → 只读查询，也会推一条巡检
+- `WorkBuddy Daily Checkin` → Run workflow → 结果 JSON 的 `action` 应为 `claimed`（当天首次）或 `skip_already_signed`（其后）
+- `WorkBuddy Cat Travel` → Run workflow，勾 `dry_run` → 只读查询状态，不做任何写操作
 
-**推送问题自查（不必靠猜）**：结果 JSON 里有 `push` 字段，日志里另有 `[push]` 行；CI 中还会输出
-`::notice::` / `::warning::` 注解，直接显示在 run 摘要里。判读：
+---
+
+## 🔕 推送开关：本仓库已关闭微信推送
+
+两个 workflow 都设了 `PUSH_LEVEL: off`，并已移除 `SERVERCHAN_KEY` 行 ——
+**不发任何消息，也不产生告警注解**。
+
+这与「只把密钥删掉」有本质区别：后者会让脚本每次运行都输出
+`skipped: 未配置 SERVERCHAN_KEY` 并触发 `::warning::` 注解（签到 5 + 旅行 4，每天最多 9 条噪音）。
+`off` 是显式的「本仓不推送」，日志干净且意图自明。
+
+**将来若要重新启用推送**：
+
+1. 新增 Secret `SERVERCHAN_KEY`，值取 sct.ftqq.com 页面上 `SCT` 开头的 SendKey；
+2. 把两个 workflow 里的 `PUSH_LEVEL: off` 改回 `all`（每次巡检都推）或 `action`（只在领取/派出/出错时推）；
+3. 先用技能包里的 `scripts/test-push.ps1` 确认密钥本身有效（从剪贴板读密钥，只发一条测试消息）：
+
+```powershell
+# 先把 SendKey（SCT 开头）复制到剪贴板
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.workbuddy\skills\workbuddy-credit-automation\scripts\test-push.ps1"
+```
+
+重启用推送后，可用结果 JSON 的 `push` 字段 / `[push]` 日志行 / `::warning::` 注解判断推送是否真的成功：
 
 | `push` 值 | 含义 |
 |---|---|
@@ -63,15 +85,8 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 | `skipped: …疑似被填成了 accessToken（JWT）` | `WB_TOKEN` 与 `SERVERCHAN_KEY` 填反/填重 |
 | `failed: HTTP 400 code=40001 msg=[AUTH]错误的Key` | SendKey 本身失效 |
 
-想先在本机确认 SendKey 是否有效（避免来回改 Secret 试错）——用技能包里的排查工具：
-
-```powershell
-# 先把 SendKey（SCT 开头）复制到剪贴板
-powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.workbuddy\skills\workbuddy-credit-automation\scripts\test-push.ps1"
-```
-
-该脚本从剪贴板读密钥（不进命令行历史），若剪贴板里是 `eyJ` 开头的令牌会先给出警告。
-同类工具：`probe.py`（账号/域名矩阵/签到/旅行/Buddy 一次性只读体检）。两者都只留在本机，不随仓库分发。
+同类排查工具：`probe.py`（账号 / 域名矩阵 / 签到 / 旅行 / Buddy 一次性只读体检）。
+两个工具都只留在本机技能包内，不随仓库分发。
 
 ---
 

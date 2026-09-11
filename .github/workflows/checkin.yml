@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       force_notify:
-        description: '强制推送一条微信通知（用于验证 SERVERCHAN_KEY 配置是否正确）'
+        description: '强制推送一条微信通知（本仓已关闭推送；仅在未来重新启用时用于验证配置）'
         type: boolean
         default: false
 
@@ -39,12 +39,12 @@ jobs:
         env:
           WB_TOKEN: ${{ secrets.WB_TOKEN }}
           WB_DOMAIN: www.codebuddy.cn
-          # 可选：填 Server 酱 SendKey 可推送微信；不需要则删除下面这行
-          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
-          # 推送级别：all = 每次巡检都推（当前设置，每天 5 条巡检结果）
-          #           action = 只在领取成功 / 出错时推（安静模式，每天最多 1 条）
-          PUSH_LEVEL: all
-          # 手动触发时勾选 force_notify=true，可强制推一条，用于验证推送配置。
+          # 本仓库【不推送微信】——SERVERCHAN_KEY 已移除，PUSH_LEVEL 设为 off。
+          # 与「删掉密钥」不同：off 让脚本完全静默，不会每次运行都刷出
+          # 「未配置 SERVERCHAN_KEY」的日志行与告警注解。
+          # 将来若要重新启用推送：填好 Secret SERVERCHAN_KEY 后，把下面改回 all。
+          PUSH_LEVEL: off
+          # 手动触发时勾选 force_notify=true 仍可强制推一条（用于将来验证推送配置）。
           # 用 github.event.inputs 而非 inputs：inputs 上下文仅在 workflow_dispatch /
           # workflow_call 可用，定时(schedule)触发时其值为 null 且 inputs 段的 default 不生效，
           # 而定时触发恰恰是本任务的主要运行方式。

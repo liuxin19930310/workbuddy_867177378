@@ -14,6 +14,7 @@
     推送级别由 PUSH_LEVEL 控制：
       all    = 每次巡检都推送（默认）
       action = 只在「领取成功（claimed）」或「出错（error）」时推送
+      off    = 本仓彻底关闭推送（无推送、无告警噪音）
     推送结果会写回结果 JSON 的 push 字段并打印（CI 下额外输出 GitHub 注解），
     因此 SendKey 填错/未配置时不再静默 —— 排查推送问题先看这一行。
     ⚠️ 易混淆：WB_TOKEN 是 `eyJ...` 开头的 JWT（1000+ 字符），
@@ -197,13 +198,19 @@ def build_body(result):
 #   all    = 每次巡检都推送（默认；用户要求「巡检结果也推送到 Server 酱」）
 #           每天 5 个触发时点，其中 4 次是 skip（今日已领），会各推一条巡检结果
 #   action = 只在「真正领到积分」或「出错」时推送（安静模式，每天最多 1 条）
+#   off    = 本仓彻底关闭推送（什么都不推、也不输出告警注解）。
+#           给「不想要微信推送」的仓库用：比删掉 SERVERCHAN_KEY 更干净 ——
+#           删密钥会让每次运行都出现 skipped/告警噪音，off 则完全静默。
 PUSH_ACTIONS = ("claimed",)
 PUSH_LEVEL = os.environ.get("PUSH_LEVEL", "all").strip().lower()
 
 
 def should_push(result):
+    # 手动强制推送优先保留，便于将来重新启用推送时仍能一次验证通断
     if is_forced():
         return True
+    if PUSH_LEVEL == "off":
+        return False
     if result.get("status") == "error":
         return True
     if PUSH_LEVEL == "all":

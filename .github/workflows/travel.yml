@@ -43,12 +43,13 @@ jobs:
 
       - name: Run cat travel
         env:
-          # 与签到共用同一个令牌与推送密钥，无需额外配置
+          # 与签到共用同一个令牌，无需额外配置
           WB_TOKEN: ${{ secrets.WB_TOKEN }}
-          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
-          # 推送级别：all = 每次巡检都推（当前设置，每天 4 条巡检结果）
-          #           action = 只在派出成功 / 领取成功 / 出错时推（安静模式）
-          PUSH_LEVEL: all
+          # 本仓库【不推送微信】——SERVERCHAN_KEY 已移除，PUSH_LEVEL 设为 off。
+          # 与「删掉密钥」不同：off 让脚本完全静默，不会每次运行都刷出
+          # 「未配置 SERVERCHAN_KEY」的日志行与告警注解。
+          # 将来若要重新启用推送：填好 Secret SERVERCHAN_KEY 后，把下面改回 all。
+          PUSH_LEVEL: off
           # 用 github.event.inputs 而非 inputs：inputs 上下文仅在 workflow_dispatch /
           # workflow_call 可用，定时(schedule)触发时其值为 null 且 inputs 段的 default 不生效。
           # github.event.inputs 在所有事件下都存在（非手动触发时为空），配合下方 shell 默认值最稳。
