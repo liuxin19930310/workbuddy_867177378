@@ -67,8 +67,14 @@ powershell -ExecutionPolicy Bypass -File get-token.ps1
 
 **第 3 步：验证**
 
-- `WorkBuddy Daily Checkin` → Run workflow，勾 `force_notify` → 手机应收到一条「（测试）签到…」
-- `WorkBuddy Cat Travel` → Run workflow，勾 `dry_run` → 只读查询状态，不做任何写操作
+- `WorkBuddy Daily Checkin` → Run workflow，勾 **`force_notify`** → 手机应收到「（测试）签到…」
+- `WorkBuddy Cat Travel` → Run workflow，勾 **`force_notify`** → 手机应收到「（测试）猫猫巡检…」
+
+两个 workflow 都提供 **`force_notify`** 手动入口：它会**绕过 `PUSH_LEVEL` 的级别限制**强制推一条，
+标题带「（测试）」前缀，因此**在没有任何派出/领取的时刻也能验证推送配置**。
+（这正是 `action` 模式下必需的——跳过类结果默认不推，否则"推送到底通不通"无从验证。）
+
+`WorkBuddy Cat Travel` 另有 `dry_run`（只读，不派出不领取）与 `location`（1 咖啡馆 / 2 商场店铺 / 3 健身房 / 4 古镇客栈，0=随机）两个输入。
 
 ---
 
@@ -201,21 +207,25 @@ HTTP 400  {"code":400,"msg":"no active buddy"}
 2026-09-12 08:15:03 +0800 travel event=schedule
 ```
 
-**为什么要每天而不是每月**：GitHub 的 `schedule` 事件是「尽力而为」的 —— 可能延迟，甚至整次跳过。
-而这两个自动化原本**没有任何远端副作用**，导致「今天到底跑没跑」从外部完全无法判断
-（2026-09-12 就因此误判过一次：08:15 的 travel 未触发，猫归来后奖励一直无人领取，却看不出是哪一环的问题）。
+### 门控规则（决定了「戳」能不能作为证据）
 
-现在判读方式是**不需要任何 API 的硬证据**：
+| 当天已有 | 本次触发 | 行为 |
+|---|---|---|
+| 无戳 | 任意 | 写入并提交 |
+| 定时戳 | 任意 | **跳过**（每天最多一条定时戳） |
+| 手动戳（`event=workflow_dispatch`） | 也是手动 | 跳过（避免连点刷提交） |
+| 手动戳 | **`schedule`** | **覆盖写入** ← 关键：手动运行**不占当天名额**，定时真跑了仍会留痕 |
+
+最后一行是有意设计的：否则你手动点一次 Run workflow，就把当天那份「定时到底有没有触发」的证据吃掉了
+（2026-09-12 就发生过一次，导致当天旅行侧的定时是否恢复变得无法判断）。
+
+**判读方式**（不需要任何 API）：
 
 ```bash
 git fetch origin main
-git show origin/main:.keepalive/last-run-travel.txt    # 戳上的日期 = 最近一次成功运行
+git show origin/main:.keepalive/last-run-travel.txt    # 戳上的日期 + event=schedule = 定时正常
 git log -1 --format='%an | %ad | %s' --date=iso origin/main
 ```
-
-- **戳的日期是今天** → travel 的定时触发正常；
-- **戳变旧了** → 对应的定时任务没在跑（或全部运行都失败），需要去 Actions 页查；
-- 从戳上的**时间**还能看出当天首个成功的时点是几点 —— 若 08:15 漏了而 12:30 跑了，一眼可辨。
 
 两个 workflow 用**独立文件**，否则先跑的会挡住后跑的（travel 08:15 早于 checkin 09:00）。
 

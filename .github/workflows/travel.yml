@@ -21,6 +21,10 @@ on:
         description: '指定地点：1咖啡馆 2商场店铺 3健身房 4古镇客栈，0=随机'
         type: string
         default: '0'
+      force_notify:
+        description: '强制推送一条通知（即使本次是"跳过"也推；标题带「（测试）」前缀，用于验证推送配置）'
+        type: boolean
+        default: false
 
 # contents: write 供「每日运行戳」步骤提交使用（证明定时触发确实发生了）
 permissions:
@@ -63,6 +67,9 @@ jobs:
           # github.event.inputs 在所有事件下都存在（非手动触发时为空），配合下方 shell 默认值最稳。
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           LOCATION: ${{ github.event.inputs.location }}
+          # 手动触发时勾选 force_notify=true，强制推一条（本次是"跳过"也推），
+          # 标题带「（测试）」前缀 —— 这是旅行侧唯一的推送验证入口。
+          FORCE_NOTIFY: ${{ github.event.inputs.force_notify }}
         run: |
           set -e
           ARGS=""
@@ -71,13 +78,21 @@ jobs:
           echo "python travel.py $ARGS"
           python travel.py $ARGS
 
-      # 每日「运行戳」：与 checkin.yml 同一机制，但用**独立文件**（否则先跑的两个 workflow 会互相挡住，
-      # travel 08:15 早于 checkin 09:00）。作用：证明 travel 的定时触发确实发生了，
-      # 且从戳上的时间可以看出当天首个成功时点是几点 —— 若 08:15 漏了而 12:30 跑了，一眼可辨。
+      # 每日「运行戳」：每天第一次成功运行时写入并提交一个带时间戳的文件。
+      #
+      # 为什么要每天（而不是每月）：GitHub 的 schedule 是「尽力而为」的，可能延迟甚至整次跳过；
+      # 而本自动化没有别的远端副作用，导致「今天到底跑没跑」从外部无法判断。
+      # 现在：有提交 = 定时在跑；戳的日期变旧 = 定时没触发 —— 不需要任何 API 的硬证据。
+      # 两个 workflow 用**独立文件**，否则先跑的会挡住后跑的（travel 08:15 早于 checkin 09:00）。
+      #
+      # 门控规则（关键）：目标是「戳能证明定时触发过」，同时不刷提交：
+      #   今天已由【定时】戳过   → 不再重复提交（每天最多一条定时戳）
+      #   今天只被【手动】戳过   → 手动运行不占名额，等定时运行来覆盖（否则证据会被手动运行吃掉）
+      #   今天已被【手动】戳过且本次也是手动 → 跳过（避免连点刷提交）
       #
       # 注意：schedule / workflow_dispatch 触发时 actions/checkout 处于 detached HEAD，
-      # 裸 `git push` 会报 "You are not currently on a branch" 而静默失败（本步骤是 continue-on-error，
-      # job 不会变红），所以必须显式写 HEAD:main。
+      # 裸 `git push` 会报 "You are not currently on a branch" 而静默失败
+      # （本步骤是 continue-on-error，不会让 job 变红），所以必须显式写 HEAD:main。
       - name: Daily run stamp (proves the scheduled trigger fired)
         continue-on-error: true
         env:
@@ -87,11 +102,18 @@ jobs:
           mkdir -p .keepalive
           STAMP=".keepalive/last-run-travel.txt"
           TODAY="$(date +%Y-%m-%d)"
+          EVENT="${GITHUB_EVENT_NAME}"
           if [ -f "$STAMP" ] && [ "$(cut -d' ' -f1 "$STAMP")" = "$TODAY" ]; then
-            echo "Already stamped today: $TODAY"
-            exit 0
+            if grep -q "event=schedule" "$STAMP"; then
+              echo "Already stamped today by a scheduled run: $TODAY"
+              exit 0
+            fi
+            if [ "$EVENT" != "schedule" ]; then
+              echo "Stamped today by a non-scheduled run; waiting for a scheduled run to overwrite: $TODAY"
+              exit 0
+            fi
           fi
-          echo "$(date '+%Y-%m-%d %H:%M:%S %z') travel event=${GITHUB_EVENT_NAME}" > "$STAMP"
+          echo "$(date '+%Y-%m-%d %H:%M:%S %z') travel event=${EVENT}" > "$STAMP"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$STAMP"

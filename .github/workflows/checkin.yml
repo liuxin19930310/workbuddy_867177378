@@ -64,14 +64,19 @@ jobs:
 
       # 每日「运行戳」：每天第一次成功运行时写入并提交一个带时间戳的文件。
       #
-      # 为什么要每天（而不是每月）：GitHub 的 schedule 事件是「尽力而为」的，可能延迟、
-      # 甚至整次跳过；而本仓库的定时任务原本没有任何远端副作用，导致「今天到底跑没跑」
+      # 为什么要每天（而不是每月）：GitHub 的 schedule 是「尽力而为」的，可能延迟甚至整次跳过；
+      # 而本仓库的定时任务原本没有任何远端副作用，导致「今天到底跑没跑」
       # 从外部完全无法判断（2026-09-12 就因此误判过一次：08:15 的 travel 未触发，
       # 猫归来后奖励一直无人领取，却看不出是哪一环的问题）。
       # 现在：**有提交 = 定时在跑；戳的日期变旧 = 定时没触发**，这是不需要任何 API 的硬证据。
       #
       # 两个 workflow 各用独立文件（checkin / travel），否则先跑的会挡住后跑的
-      # （travel 08:15 早于 checkin 09:00）。每天每个 workflow 最多提交一次。
+      # （travel 08:15 早于 checkin 09:00）。
+      #
+      # 门控规则（关键）：目标是「戳能证明定时触发过」，同时不刷提交：
+      #   今天已由【定时】戳过   → 不再重复提交（每天最多一条定时戳）
+      #   今天只被【手动】戳过   → 手动运行不占名额，等定时运行来覆盖（否则证据会被手动运行吃掉）
+      #   今天已被【手动】戳过且本次也是手动 → 跳过（避免连点刷提交）
       #
       # 注意：schedule / workflow_dispatch 触发时 actions/checkout 处于 detached HEAD，
       # 裸 `git push` 会报 "You are not currently on a branch" 而静默失败
@@ -85,11 +90,18 @@ jobs:
           mkdir -p .keepalive
           STAMP=".keepalive/last-run-checkin.txt"
           TODAY="$(date +%Y-%m-%d)"
+          EVENT="${GITHUB_EVENT_NAME}"
           if [ -f "$STAMP" ] && [ "$(cut -d' ' -f1 "$STAMP")" = "$TODAY" ]; then
-            echo "Already stamped today: $TODAY"
-            exit 0
+            if grep -q "event=schedule" "$STAMP"; then
+              echo "Already stamped today by a scheduled run: $TODAY"
+              exit 0
+            fi
+            if [ "$EVENT" != "schedule" ]; then
+              echo "Stamped today by a non-scheduled run; waiting for a scheduled run to overwrite: $TODAY"
+              exit 0
+            fi
           fi
-          echo "$(date '+%Y-%m-%d %H:%M:%S %z') checkin event=${GITHUB_EVENT_NAME}" > "$STAMP"
+          echo "$(date '+%Y-%m-%d %H:%M:%S %z') checkin event=${EVENT}" > "$STAMP"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$STAMP"

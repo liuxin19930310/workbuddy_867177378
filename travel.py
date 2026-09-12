@@ -31,6 +31,9 @@
       off    = 本仓彻底关闭推送（无推送、无告警噪音）
     推送结果写回结果 JSON 的 push 字段并打印（CI 下额外输出 GitHub 注解），
     故密钥填错/未配置时不再静默。
+    调试：设置 FORCE_NOTIFY=1（Actions 手动触发时勾选 force_notify）**强制推一条**，
+    即便本次结果是「跳过」也照推，标题带「（测试）」前缀 —— 用于在无派出/无领取的时刻
+    也能验证推送配置是否正确。这是旅行侧唯一的推送验证入口。
 
 用法：
     python travel.py                # 巡检一轮
@@ -267,7 +270,19 @@ PUSH_ACTIONS = ("departed", "claimed")
 PUSH_LEVEL = os.environ.get("PUSH_LEVEL", "all").strip().lower()
 
 
+def is_forced():
+    """手动触发时勾选 force_notify，强制推送一条，用于验证推送配置。
+
+    这一层是「可手动验证入口」原则的落实：`action`/`off` 模式下，跳过类结果默认不推送，
+    于是「推送到底通不通」在旅行侧无法验证 —— 曾因此让用户误以为推送坏了。
+    """
+    return os.environ.get("FORCE_NOTIFY", "").strip().lower() in ("1", "true", "yes")
+
+
 def should_push(result):
+    # 手动强制推送优先（即便本次是「跳过」也要推一条，用于验证推送配置）
+    if is_forced():
+        return True
     if PUSH_LEVEL == "off":
         return False
     if result.get("status") == "error":
@@ -285,23 +300,25 @@ def fmt_remain(minutes):
 
 
 def build_title(result):
+    # 测试推送加前缀，便于和真实通知区分（force_notify 时）
+    prefix = "（测试）" if is_forced() else ""
     a = result.get("action")
     if result.get("status") == "error":
-        return "猫猫旅行异常，需要处理"
+        return prefix + "猫猫旅行异常，需要处理"
     if a == "claimed":
-        return "猫猫旅行归来 +%s 积分" % result.get("reward_credit", "?")
+        return prefix + "猫猫旅行归来 +%s 积分" % result.get("reward_credit", "?")
     if a == "departed":
-        return "猫猫已出发 · %s" % result.get("location", "")
+        return prefix + "猫猫已出发 · %s" % result.get("location", "")
     if a == "skip_traveling":
         rm = result.get("remain_minutes")
         if rm and rm > 0:
-            return "猫猫巡检 · 旅行中（还有 %s）" % fmt_remain(rm)
-        return "猫猫巡检 · 旅行中"
+            return prefix + "猫猫巡检 · 旅行中（还有 %s）" % fmt_remain(rm)
+        return prefix + "猫猫巡检 · 旅行中"
     if a == "skip_daily_limit":
-        return "猫猫巡检 · 今日已完成"
+        return prefix + "猫猫巡检 · 今日已完成"
     if a == "none":
-        return "猫猫巡检 · 只读查询"
-    return "猫猫巡检"
+        return prefix + "猫猫巡检 · 只读查询"
+    return prefix + "猫猫巡检"
 
 
 def build_body(result):
