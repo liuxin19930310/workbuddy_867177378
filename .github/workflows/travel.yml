@@ -22,8 +22,9 @@ on:
         type: string
         default: '0'
 
+# contents: write 供「每日运行戳」步骤提交使用（证明定时触发确实发生了）
 permissions:
-  contents: read
+  contents: write
 
 # 与签到任务相互独立，各自加锁即可
 concurrency:
@@ -69,3 +70,30 @@ jobs:
           if [ -n "$LOCATION" ] && [ "$LOCATION" != "0" ]; then ARGS="$ARGS --location $LOCATION"; fi
           echo "python travel.py $ARGS"
           python travel.py $ARGS
+
+      # 每日「运行戳」：与 checkin.yml 同一机制，但用**独立文件**（否则先跑的两个 workflow 会互相挡住，
+      # travel 08:15 早于 checkin 09:00）。作用：证明 travel 的定时触发确实发生了，
+      # 且从戳上的时间可以看出当天首个成功时点是几点 —— 若 08:15 漏了而 12:30 跑了，一眼可辨。
+      #
+      # 注意：schedule / workflow_dispatch 触发时 actions/checkout 处于 detached HEAD，
+      # 裸 `git push` 会报 "You are not currently on a branch" 而静默失败（本步骤是 continue-on-error，
+      # job 不会变红），所以必须显式写 HEAD:main。
+      - name: Daily run stamp (proves the scheduled trigger fired)
+        continue-on-error: true
+        env:
+          TZ: Asia/Shanghai
+        run: |
+          set -e
+          mkdir -p .keepalive
+          STAMP=".keepalive/last-run-travel.txt"
+          TODAY="$(date +%Y-%m-%d)"
+          if [ -f "$STAMP" ] && [ "$(cut -d' ' -f1 "$STAMP")" = "$TODAY" ]; then
+            echo "Already stamped today: $TODAY"
+            exit 0
+          fi
+          echo "$(date '+%Y-%m-%d %H:%M:%S %z') travel event=${GITHUB_EVENT_NAME}" > "$STAMP"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STAMP"
+          git commit -m "chore: daily run stamp ${TODAY} (travel)"
+          git push origin HEAD:main

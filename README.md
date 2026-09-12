@@ -185,12 +185,39 @@ HTTP 400  {"code":400,"msg":"no active buddy"}
 
 ---
 
-## 四、保活机制
+## 四、保活与「定时是否真的在跑」的取证
 
 本仓库只承载这两个自动化，长期无提交会被 GitHub 自动停用定时任务。
-`checkin.yml` 末尾内置**每月心跳提交**（`.keepalive/last-heartbeat.txt`，`continue-on-error: true`），
-因此仓库始终有活动。该提交由 `github-actions[bot]` 产生，也可作为**链路健康的硬证据**：
+两个 workflow 末尾各有一个**每日运行戳**步骤（`continue-on-error: true`）：
+
+| 文件 | 由谁写 | 提交频率 |
+|---|---|---|
+| `.keepalive/last-run-checkin.txt` | `checkin.yml` | 每天首次成功运行 |
+| `.keepalive/last-run-travel.txt` | `travel.yml` | 每天首次成功运行 |
+
+内容的形如：
+
+```
+2026-09-12 08:15:03 +0800 travel event=schedule
+```
+
+**为什么要每天而不是每月**：GitHub 的 `schedule` 事件是「尽力而为」的 —— 可能延迟，甚至整次跳过。
+而这两个自动化原本**没有任何远端副作用**，导致「今天到底跑没跑」从外部完全无法判断
+（2026-09-12 就因此误判过一次：08:15 的 travel 未触发，猫归来后奖励一直无人领取，却看不出是哪一环的问题）。
+
+现在判读方式是**不需要任何 API 的硬证据**：
 
 ```bash
-git fetch origin main && git log -1 --format='%an | %s' FETCH_HEAD   # 应见 github-actions[bot]
+git fetch origin main
+git show origin/main:.keepalive/last-run-travel.txt    # 戳上的日期 = 最近一次成功运行
+git log -1 --format='%an | %ad | %s' --date=iso origin/main
 ```
+
+- **戳的日期是今天** → travel 的定时触发正常；
+- **戳变旧了** → 对应的定时任务没在跑（或全部运行都失败），需要去 Actions 页查；
+- 从戳上的**时间**还能看出当天首个成功的时点是几点 —— 若 08:15 漏了而 12:30 跑了，一眼可辨。
+
+两个 workflow 用**独立文件**，否则先跑的会挡住后跑的（travel 08:15 早于 checkin 09:00）。
+
+> 补充：`schedule` 单次未触发属正常现象，不是 bug。这也是状态机设计成「多时点 + 幂等」的原因 ——
+> 08:15 漏了 12:30 会补上，**奖励不会丢**。
