@@ -3,7 +3,21 @@
 用 GitHub Actions 每天定时调用 WorkBuddy 官方接口，**不依赖本机是否开机** —— 电脑关机、出差、假期都能照常跑。
 
 - 绑定账号：`L`（`uid = fff69a30-5d1d-493b-b62a-94cb62d88526`）
-- 多账号隔离：GitHub Secret 是**仓库级**的，所以每个账号一个独立私有仓，互不干扰。
+- 多账号隔离：GitHub Secret 是**仓库级**的，所以每个账号一个独立仓库，互不干扰。
+- 通知渠道：**Bark（iPhone 原生通知）**，密钥存在 Secret `BARK_KEY`；`PUSH_LEVEL: action`。
+
+> ## ⚠️ 本仓库必须保持 public，不要改回私有
+>
+> **原因**：免费个人账号下，**私有仓库的 `schedule` 定时事件不会触发**（社区实证；官方文档只写了免费计划私有仓 2000 分钟/月，未记载这条限制）。
+>
+> **判定签名**（一眼可辨）：Actions 页只有手动运行记录、**零条 `schedule` 运行**；工作流详情页横幅只写 *"This workflow has a `workflow_dispatch` event trigger."*，**完全不提 `schedule`**；而配置怎么查都没问题（令牌有效、默认分支正确、YAML 合法、手动运行能成功）。
+>
+> **若确实必须私有**（两条替代路径）：
+> 1. 升级 GitHub Pro（$4/月）—— 官方支持私有仓定时；
+> 2. 外部定时器（cron-job.org 等）带 fine-grained PAT（`Actions: write`）调 `workflow_dispatch` 接口：
+>    `curl -X POST -H "Authorization: Bearer <PAT>" https://api.github.com/repos/<owner>/<repo>/actions/workflows/checkin.yml/dispatches -d '{"ref":"main"}'`
+>
+> 附带好处：public 仓的标准 runner Actions 分钟**免费且不限量**（私有仓才有 2000 分钟/月上限）。
 
 | 自动化 | 脚本 | 工作流 | 调度（北京时间） | 做什么 |
 |---|---|---|---|---|
