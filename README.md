@@ -34,6 +34,9 @@
 
 - 仓库初始化：`checkin.py`、`travel.py`、`get-token.ps1`
 - 工作流：`.github/workflows/checkin.yml`、`.github/workflows/travel.yml`
+- **调度升级为外部定时器**（2026-09-13）：cron-job.org 在北京时间 **00:05 / 08:00 / 12:30**
+  精确触发，GitHub 原生 cron 退居兜底。配置手册见 [`EXTERNAL-CRON.md`](EXTERNAL-CRON.md)
+  —— ⚠️ 其中「创建 GitHub PAT」与「建 6 个 cron job」需要你手动完成
 - **本机实测闭环（2026-09-12 00:30）**
   - 签到：`claimed` **+100 积分**，`streak_days=2`，`total_credits=200`
   - 旅行：`departed` → 商场店铺，`record_id=4520713`，预计 04:30 归来；
@@ -191,43 +194,66 @@ HTTP 400  {"code":400,"msg":"no active buddy"}
 
 ---
 
-## 四、保活与「定时是否真的在跑」的取证
+## 四、调度：外部定时器 + 原生兜底
+
+GitHub 原生 `schedule` 是 best-effort（实测延迟 2 分钟 ~ 3 小时 08 分，并出现过整次丢弃），
+因此**准时由外部定时器负责**，GitHub 原生 cron 退居兜底。
+
+| 时间（北京） | 动作 | 由谁触发 |
+|---|---|---|
+| **00:05** | 签到 | 外部定时器（cron-job.org） |
+| **08:00** | 猫猫出发 | 外部定时器 |
+| **12:30** | 猫猫归来领取 | 外部定时器 |
+| 09:00 / 12:00 / 15:00 / 18:00 / 21:00 | 签到兜底 | GitHub 原生 cron |
+| 08:15 / 12:30 / 16:45 / 21:00 | 猫猫兜底 | GitHub 原生 cron |
+
+外部定时器的完整配置（GitHub PAT 创建、cron-job.org 6 个 job、验证与维护）
+见 **[EXTERNAL-CRON.md](EXTERNAL-CRON.md)**。
+
+---
+
+## 五、保活与「定时是否真的在跑」的取证
 
 本仓库只承载这两个自动化，长期无提交会被 GitHub 自动停用定时任务。
-两个 workflow 末尾各有一个**每日运行戳**步骤（`continue-on-error: true`）：
+两个 workflow 末尾各有一个**每日运行戳**步骤（`continue-on-error: true`），
+它同时是一份**不需要任何 API 就能读的运行账本**：
 
-| 文件 | 由谁写 | 提交频率 |
+| 文件 | 由谁写 | 提交时机 |
 |---|---|---|
-| `.keepalive/last-run-checkin.txt` | `checkin.yml` | 每天首次成功运行 |
-| `.keepalive/last-run-travel.txt` | `travel.yml` | 每天首次成功运行 |
+| `.keepalive/last-run-checkin.txt` | `checkin.yml` | 当天首笔运行；出现 `claimed` 时更新 |
+| `.keepalive/last-run-travel.txt` | `travel.yml` | 当天首笔运行；出现 `departed` / `claimed` 时更新 |
 
-内容的形如：
+内容形如：
 
 ```
-2026-09-12 08:15:03 +0800 travel event=schedule
+2026-09-14 00:05:12 +0800 checkin event=workflow_dispatch action=claimed
 ```
+
+三个字段各有含义：`event=` 说明**被谁触发**（`workflow_dispatch` = 外部定时器或手动；
+`schedule` = GitHub 原生 cron），`action=` 说明**结果**（`claimed` / `departed` = 真的领到；
+`skip_*` = 空跑；`none` / `error` = 异常）。
 
 ### 门控规则（决定了「戳」能不能作为证据）
 
-| 当天已有 | 本次触发 | 行为 |
+| 当天已有 | 本次动作 | 行为 |
 |---|---|---|
-| 无戳 | 任意 | 写入并提交 |
-| 定时戳 | 任意 | **跳过**（每天最多一条定时戳） |
-| 手动戳（`event=workflow_dispatch`） | 也是手动 | 跳过（避免连点刷提交） |
-| 手动戳 | **`schedule`** | **覆盖写入** ← 关键：手动运行**不占当天名额**，定时真跑了仍会留痕 |
+| 无戳 | 任意 | 写入并提交（出错也会留下「跑过」的记录） |
+| 有戳 | `skip_*`（空跑） | 保持原样 —— 不让空跑冲掉当天真实结果 |
+| 有戳 | `claimed` / `departed`，且与已记录的不同 | 覆盖（travel 当天先 `departed` 后 `claimed`，各记一笔） |
+| 有戳 | 与已记录相同的实质动作 | 跳过（避免重复提交） |
 
-最后一行是有意设计的：否则你手动点一次 Run workflow，就把当天那份「定时到底有没有触发」的证据吃掉了
-（2026-09-12 就发生过一次，导致当天旅行侧的定时是否恢复变得无法判断）。
+> 旧版规则是「`schedule` 覆盖一切」，目的是证明原生定时跑了。但主触发源改为外部定时器后
+> （走 `workflow_dispatch`），旧规则会把 00:05 的领取记录覆盖成 09:xx 的空跑，反而掩盖真相。
 
 **判读方式**（不需要任何 API）：
 
 ```bash
 git fetch origin main
-git show origin/main:.keepalive/last-run-travel.txt    # 戳上的日期 + event=schedule = 定时正常
+git show origin/main:.keepalive/last-run-checkin.txt   # event + action 一眼看清是谁触发、结果如何
 git log -1 --format='%an | %ad | %s' --date=iso origin/main
 ```
 
-两个 workflow 用**独立文件**，否则先跑的会挡住后跑的（travel 08:15 早于 checkin 09:00）。
+两个 workflow 用**独立文件**，否则先跑的会挡住后跑的。
 
 > 补充：`schedule` 单次未触发属正常现象，不是 bug。这也是状态机设计成「多时点 + 幂等」的原因 ——
-> 08:15 漏了 12:30 会补上，**奖励不会丢**。
+> 08:15 漏了 12:30 会补上，**奖励不会丢**；现在前面还有外部定时器，实际很少走到兜底。
