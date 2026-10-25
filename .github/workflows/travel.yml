@@ -55,7 +55,8 @@ jobs:
           BARK_KEY: ${{ secrets.BARK_KEY }}
           # 自建 Bark 服务器时填自己的域名；留空用官方 https://api.day.app
           BARK_SERVER: ''
-          BARK_GROUP: workbuddy
+          WB_LABEL: '新号'
+          BARK_GROUP: wb-new
           # active(默认) / timeSensitive(可突破专注模式) / critical(静音也响) / passive
           BARK_LEVEL: active
           # 推送级别：action = 只在派出成功 / 领取成功 / 出错时推（当前设置，每天 ≤2 条）
