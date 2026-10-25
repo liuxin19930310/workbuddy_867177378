@@ -50,6 +50,11 @@ jobs:
         env:
           # 与签到共用同一个令牌，无需额外配置
           WB_TOKEN: ${{ secrets.WB_TOKEN }}
+          # 旅行接口域名：保持本仓一直使用的 www.workbuddy.cn（该域名实测可用）。
+          # 脚本同步自旧仓后默认值变为 www.codebuddy.cn，此处显式覆盖，
+          # 目的是「只同步代码、不改动正在正常工作的链路」。
+          # 若日后该域名不可达：删掉这行即回落到 www.codebuddy.cn。
+          WB_DOMAIN: www.workbuddy.cn
           # 推送渠道与密钥：与 checkin.yml 保持一致（bark = iPhone 原生通知）
           NOTIFY_CHANNEL: bark
           BARK_KEY: ${{ secrets.BARK_KEY }}
